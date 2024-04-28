@@ -2,13 +2,28 @@ import yfinance as yf
 import mplfinance as mpf
 import numpy as np
 from scipy.signal import find_peaks
+from datetime import datetime, timedelta
 
 # DATA:
-ticker = 'ZUO'
-start_date = '2024-04-04' #Has to be one day less than end_date
-end_date = '2024-04-05' #Change HERE to run the backtest
-take_profit = 8.63
-entry = True
+ticker = input("Ticker: ").upper()
+mode = input("Swim Trade mode by default. Enter Y for Day Trade [Y]: ").upper()
+interval = "1m"
+entry = False
+if mode == 'Y':
+    start_date = input("Start date [YYYYMMDDHHMM]: ")
+    end_date = input("End Time [HHMM]: ")
+    interval = input("Interval by default 1m [2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo]: ")
+    print(f"Python3 ./trading.py {start_date} d {end_date} {ticker} {interval}")
+    end_date = datetime(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:8]), int(end_date[:2]), int(end_date[2:]))
+    start_date1 = datetime(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:8]), int(start_date[8:10]), int(start_date[10:]))
+else:    
+    start_date = input("Start date [YYYYMMDD]: ") #Has to be one day less than end_date
+    #end_date = input("")'2024-04-05' #Change HERE to run the backtest
+    take_profit = 8.63
+    entry = True
+
+# Download stock data
+data = yf.download(ticker, start=start_date1, end=end_date, interval=interval)
 
 # Function to find support and resistance levels
 def find_levels(data, threshold=0.005):
@@ -34,22 +49,22 @@ def calc_risk_reward_levels(entry_price, take_profit, risk_reward_ratio=2):
 
     return stop_loss
 
-# Download stock data
-data = yf.download(ticker, start='2024-01-05', end=end_date)
-
 # Example entry price. We are going to use the last Close price recorded
-entry_price = data.loc[start_date, 'Close']  # Replace with the actual entry price
+entry_price = data['Close'].iloc[-1]  # Replace with the actual entry price
 
 # Calculate stop loss and take profit levels based on the risk/reward ratio. The last varible is to define short or long
-stop_loss = calc_risk_reward_levels(entry_price, take_profit, risk_reward_ratio=2)
+if entry == True: stop_loss = calc_risk_reward_levels(entry_price, take_profit, risk_reward_ratio=2)
 
 # Find support and resistance levels
 resistance_levels, support_levels = find_levels(data)
 
 # Addind SMA indicators
 data['SMA20'] = data['Close'].rolling(window=20).mean()
+data['SMA50'] = data['Close'].rolling(window=50).mean()
 # Calculate the 20-day Exponential Moving Average (EMA)
 data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
+# Calculate the 50-day Exponential Moving Average (EMA)
+data['EMA50'] = data['Close'].ewm(span=50, adjust=False).mean()
 
 # Create additional plots for support, resistance, entry, stop loss, and take profit
 addplot = []
@@ -69,13 +84,13 @@ addplot.append(mpf.make_addplot(
         linestyle='-',
         width=1,
         label='20-Day SMA'))
-# Adding the EMA20
+# Adding the EMA50
 addplot.append(mpf.make_addplot(
-        data['EMA20'],
+        data['EMA50'],
         color='pink',
         linestyle='-',
         width=1,
-        label='20-Day EMA'))
+        label='50-Day EMA'))
 
 addplot.append(mpf.make_addplot([entry_price] * len(data), color='blue', linestyle='--', width=1, label=f'Close price: {entry_price:.2f}'))
 
