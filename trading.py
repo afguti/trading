@@ -1,29 +1,50 @@
+#!/usr/bin/env python3
 import yfinance as yf
 import mplfinance as mpf
 import numpy as np
 from scipy.signal import find_peaks
 from datetime import datetime, timedelta
+from pandas.tseries.offsets import BDay
 
-# DATA:
 ticker = input("Ticker: ").upper()
 mode = input("Swim Trade mode by default. Enter Y for Day Trade [Y]: ").upper()
-interval = "1m"
-entry = False
-if mode == 'Y':
-    start_date = input("Start date [YYYYMMDDHHMM]: ")
-    end_date = input("End Time [HHMM]: ")
-    interval = input("Interval by default 1m [2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo]: ")
+if mode == 'Y': #For day trading
+    today = datetime.today().date()
+    last_business_day = today - BDay(1)
+    interval = input("Interval by default 1m [2m, 5m, 15m, 30m, 60m, 90m, 1h]: ") or 1
+    interval = int(interval)
+    last_business_day = last_business_day - timedelta(hours=8,minutes=20*interval)
+    last_business_day = datetime(last_business_day.year,last_business_day.month,last_business_day.day,last_business_day.hour,last_business_day.minute)
+    start_date = input(f"Start date {last_business_day} [YYYYMMDDHHMM]: ") or last_business_day
+    if type(start_date) == str:
+        last_business_day = datetime(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:8])+1, 9, 30)
+    else:
+        last_business_day = today - BDay(1)
+    last_business_day = last_business_day + timedelta(hours=9,minutes=30)
+    last_business_day = datetime(last_business_day.year,last_business_day.month,last_business_day.day,last_business_day.hour,last_business_day.minute)
+    end_date = input(f"End Time {last_business_day} [HHMM]: ") or last_business_day
+    entry = input("Trade? (deafult is NO) [Y/N]: ").upper()
     print(f"Python3 ./trading.py {start_date} d {end_date} {ticker} {interval}")
-    end_date = datetime(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:8]), int(end_date[:2]), int(end_date[2:]))
-    start_date1 = datetime(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:8]), int(start_date[8:10]), int(start_date[10:]))
-else:    
+    if type(end_date) == str:
+        end_date = datetime(last_business_day.year, last_business_day.month,last_business_day.day, int(end_date[:2]), int(end_date[2:]))
+    if type(start_date) == str:
+        start_date1 = datetime(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:8]), int(start_date[8:10]), int(start_date[10:]))
+    else: start_date1 = start_date
+else: #For swim trading
     start_date = input("Start date [YYYYMMDD]: ") #Has to be one day less than end_date
-    #end_date = input("")'2024-04-05' #Change HERE to run the backtest
-    take_profit = 8.63
-    entry = True
+    end_date = input("End date [MMDD]: ") #Change HERE to run the backtest
+    interval = input("Interval by default 1d [5d, 1wk, 1mo, 3mo]: ") or "1d"
+    entry = input("Trade? (deafult is NO) [Y/N]: ").upper()
+    print(f"Python3 ./trading.py {start_date} s {end_date} {ticker} {interval}")
+    end_date = datetime(int(start_date[:4]), int(end_date[:2]), int(end_date[2:]), 0, 0)
+    start_date1 = datetime(int(start_date[:4]), int(start_date[4:6]), int(start_date[6:]), 0, 0)
 
 # Download stock data
-data = yf.download(ticker, start=start_date1, end=end_date, interval=interval)
+data = yf.download(ticker, start=start_date1, end=end_date, interval=str(interval)+'m')
+
+# Example entry price. We are going to use the last Close price recorded
+entry_price = data['Close'].iloc[-1]  # Replace with the actual entry price
+print("Entry price: ",entry_price)
 
 # Function to find support and resistance levels
 def find_levels(data, threshold=0.005):
@@ -49,22 +70,20 @@ def calc_risk_reward_levels(entry_price, take_profit, risk_reward_ratio=2):
 
     return stop_loss
 
-# Example entry price. We are going to use the last Close price recorded
-entry_price = data['Close'].iloc[-1]  # Replace with the actual entry price
-
-# Calculate stop loss and take profit levels based on the risk/reward ratio. The last varible is to define short or long
-if entry == True: stop_loss = calc_risk_reward_levels(entry_price, take_profit, risk_reward_ratio=2)
+if entry == "Y":
+    entry = True
+    take_profit = input(f"Take profit (default is Close price {entry_price:.2f}): ")
+    stop_loss = calc_risk_reward_levels(entry_price, take_profit, risk_reward_ratio=2)
+else: entry = False
 
 # Find support and resistance levels
 resistance_levels, support_levels = find_levels(data)
+print(resistance_levels, support_levels)
 
 # Addind SMA indicators
 data['SMA20'] = data['Close'].rolling(window=20).mean()
-data['SMA50'] = data['Close'].rolling(window=50).mean()
 # Calculate the 20-day Exponential Moving Average (EMA)
 data['EMA20'] = data['Close'].ewm(span=20, adjust=False).mean()
-# Calculate the 50-day Exponential Moving Average (EMA)
-data['EMA50'] = data['Close'].ewm(span=50, adjust=False).mean()
 
 # Create additional plots for support, resistance, entry, stop loss, and take profit
 addplot = []
@@ -86,11 +105,11 @@ addplot.append(mpf.make_addplot(
         label='20-Day SMA'))
 # Adding the EMA50
 addplot.append(mpf.make_addplot(
-        data['EMA50'],
+        data['EMA20'],
         color='pink',
         linestyle='-',
         width=1,
-        label='50-Day EMA'))
+        label='20-Day EMA'))
 
 addplot.append(mpf.make_addplot([entry_price] * len(data), color='blue', linestyle='--', width=1, label=f'Close price: {entry_price:.2f}'))
 
@@ -125,6 +144,8 @@ else:
             "y2": entry_price,
         }
     ]
+
+print("data lenght ",len(data))
 
 # Plot the candlestick chart with support/resistance, entry price, stop loss, and take profit
 tck = yf.Ticker(ticker)
